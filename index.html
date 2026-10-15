@@ -1014,14 +1014,16 @@ function netTick(dt){if(NET.role==='solo'||S!=='play')return;NET.acc+=dt;
 function mpStatus(t){$('mpSt').textContent=t}
 function updMpHost(){if(NET.role==='host')mpStatus('Istabas kods: '+NET.code+' · Spēlētāji: '+(NET.conns.size+1)+' (līdz 4)')}
 const mpName=()=>($('mpName').value.trim()||('Gailis'+(10+Math.random()*90|0))).replace(/[<>&]/g,'').slice(0,12);
-NET.leave=function(){try{NET.conns.forEach(c=>c.close())}catch(e){}try{if(NET.host)NET.host.close()}catch(e){}try{if(NET.peer)NET.peer.destroy()}catch(e){}
+NET.leave=function(){clearTimeout(NET.to);try{NET.conns.forEach(c=>c.close())}catch(e){}try{if(NET.host)NET.host.close()}catch(e){}try{if(NET.peer)NET.peer.destroy()}catch(e){}
  NET.role='solo';NET.peer=null;NET.host=null;NET.conns.clear();NET.rp.clear();NET.names.clear();NET.code='';NET.rr.forEach(r=>scene.remove(r.g));NET.rr.clear();show('mpGo',false);mpStatus('')};
 function mkCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<4;i++)s+=A[Math.random()*A.length|0];return s}
 function hostConn(c){c.on('open',()=>{if(NET.conns.size>=3){c.send({t:'full'});setTimeout(()=>c.close(),400);return}NET.conns.set(c.peer,c);updMpHost()});
  c.on('data',m=>hostRecv(c.peer,m));
  c.on('close',()=>{NET.conns.delete(c.peer);const r=NET.rr.get(c.peer);if(r){scene.remove(r.g);NET.rr.delete(c.peer)}NET.rp.delete(c.peer);NET.names.delete(c.peer);sendRoster();if(S==='play'&&allDown())gameOver('Visi gaiļi krita!')})}
-function tryHost(n){const code=mkCode(),p=new Peer('jgk-'+code);NET.peer=p;mpStatus('Veido istabu…');
- p.on('open',()=>{NET.code=code;updMpHost();show('mpGo',true)});
+function tryHost(n){const code=mkCode(),p=new Peer('jgk-'+code);NET.peer=p;mpStatus('Veido istabu (savienojas ar PeerJS serveri)…');
+ clearTimeout(NET.to);NET.to=setTimeout(()=>{if(NET.role==='host'&&!NET.code)mpStatus('Nevar sasniegt PeerJS serveri (0.peerjs.com). Pārbaudi internetu un reklāmu bloķētāju; spēle jāatver no parastas lapas (piem. GitHub Pages), nevis no claude.ai artefakta.')},12000);
+ p.on('disconnected',()=>{if(NET.role==='host')mpStatus('Zaudēts savienojums ar PeerJS serveri — istaba vairs nav atrodama. Izveido jaunu.')});
+ p.on('open',()=>{clearTimeout(NET.to);NET.code=code;updMpHost();show('mpGo',true)});
  p.on('error',e=>{if(e.type==='unavailable-id'&&n<4){try{p.destroy()}catch(x){}tryHost(n+1)}else mpStatus('Kļūda: '+e.type)});
  p.on('connection',hostConn)}
 $('bMP').onclick=()=>{audioInit();show('menu',false);show('mp',true);show('mpGo',NET.role==='host'&&!!NET.code);updMpHost()};
@@ -1030,9 +1032,12 @@ $('mpHost').onclick=()=>{if(typeof Peer==='undefined'){mpStatus('Tīkla bibliot�
 $('mpGo').onclick=()=>{audioInit();snd('click');start();netB(startMsg())};
 $('mpJoin').onclick=()=>{if(typeof Peer==='undefined'){mpStatus('Tīkla bibliotēka nav ielādēta (vai nav interneta)');return}
  const code=$('mpCode').value.trim().toUpperCase();if(code.length!==4){mpStatus('Ievadi 4 simbolu istabas kodu');return}
- audioInit();NET.leave();NET.role='client';const p=new Peer();NET.peer=p;mpStatus('Savienojas…');
- p.on('open',id=>{NET.myId=id;const c=p.connect('jgk-'+code,{reliable:true,serialization:'json'});NET.host=c;
-  c.on('open',()=>{c.send({t:'hi',n:mpName()});mpStatus('Savienots! Gaida, kamēr saimnieks sāks spēli…')});
+ audioInit();NET.leave();NET.role='client';let stage=1;const p=new Peer();NET.peer=p;mpStatus('1/3 Savienojas ar PeerJS serveri…');
+ NET.to=setTimeout(()=>{if(NET.role==='client'&&!(NET.host&&NET.host.open))mpStatus(stage===1?'Nevar sasniegt PeerJS serveri (0.peerjs.com). Pārbaudi internetu un reklāmu bloķētāju; spēle jāatver no parastas lapas (piem. GitHub Pages), nevis no claude.ai artefakta.':'Serveris sasniegts, bet nevar izveidot savienojumu ar saimnieku (tīkls/ugunsmūris vai saimnieka istaba vairs nav aktīva). Pamēģini vēlreiz vai citu tīklu.')},15000);
+ p.on('disconnected',()=>{if(NET.role==='client'&&stage<3)mpStatus('Zaudēts savienojums ar PeerJS serveri.')});
+ p.on('open',id=>{stage=2;mpStatus('2/3 Meklē istabu '+code+'…');NET.myId=id;const c=p.connect('jgk-'+code,{reliable:true,serialization:'json'});NET.host=c;
+  c.on('error',e=>mpStatus('Savienojuma kļūda: '+(e&&e.type||e)));
+  c.on('open',()=>{stage=3;clearTimeout(NET.to);c.send({t:'hi',n:mpName()});mpStatus('3/3 Savienots! Gaida, kamēr saimnieks sāks spēli…')});
   c.on('data',clientRecv);
   c.on('close',()=>{if(NET.role!=='client')return;NET.leave();mpStatus('Savienojums pārtrūka');if(S==='play')gameOver('Saimnieks atvienojās')})});
  p.on('error',e=>mpStatus(e.type==='peer-unavailable'?'Istaba nav atrasta':'Kļūda: '+e.type))};
