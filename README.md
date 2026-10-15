@@ -1,0 +1,2 @@
+# JGKari
+Jāņa Gaiļa Kari
